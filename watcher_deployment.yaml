@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: repo-watcher
+  labels:
+    app: repo-watcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: repo-watcher
+  template:
+    metadata:
+      labels:
+        app: repo-watcher
+    spec:
+      containers:
+        - name: repo-watcher
+          image: yassermog/repo_watcher
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 6060
+          env:
+            - name: repos
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: repos
