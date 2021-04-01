@@ -41,3 +41,17 @@ new repo
 changing github username 
 
 ![Alt text](img/newusernme.png)
+
+## configMap 
+
+to save the data of the reositories I used a configmap in the helm chart  
+
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: default
+data:
+  repos: ""
+```
