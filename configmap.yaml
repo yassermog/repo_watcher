@@ -4,4 +4,4 @@ metadata:
   name: app-config
   namespace: default
 data:
-  repos: "{test1,test2}"
+  repos: ""

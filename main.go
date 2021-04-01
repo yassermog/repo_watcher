@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"encoding/json"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"context"
+	"strings"
 )
 
 func main() {
@@ -24,7 +24,6 @@ func main() {
 	log.Println("Starting Server ....")
 	r := mux.NewRouter()
 	r.HandleFunc("/", index)
-	r.HandleFunc("/hello", hello).Methods("GET")
 	r.HandleFunc("/config", config_handeler).Methods("GET")
 	r.HandleFunc("/data", data_handeler).Methods("GET")
 	http.Handle("/", r)
@@ -46,7 +45,7 @@ func main() {
 	
 	os.Setenv("watch_interval", interval)
 
-	// loop killer
+	// loop watchrepo
 	go watchrepo(CONFIG_MAP_NAME)
 
 	log.Println("Web Server is Starting on 6060 Port ....")
@@ -61,7 +60,10 @@ func config_handeler(w http.ResponseWriter, r *http.Request) {
 
 	github_username := query.Get("github_username")
 	if github_username == "" {
-		github_username = "default"
+		github_username = "yassermog"
+	} else{
+		fmt.Fprintf(w, "github_username is set to = %s\n", github_username)
+		setConfigMap("")
 	}
 	os.Setenv("github_username", github_username)
 
@@ -79,7 +81,6 @@ func config_handeler(w http.ResponseWriter, r *http.Request) {
 }
 
 func watchrepo(CONFIG_MAP_NAME string){
-	log.Printf("Start Loop killer \n")
 	log.Printf("####################### Repository Watcher  ####################### \n")
 	interval := ""
 	wait := 0
@@ -91,8 +92,8 @@ func watchrepo(CONFIG_MAP_NAME string){
 		if err != nil {
 			log.Fatal(err)
 		}
-		go call_api(CONFIG_MAP_NAME)
-		log.Printf("Sleeping for %s seconds \n", interval)
+		go call_api()
+
 		time.Sleep(time.Duration(wait) * time.Second)
 	}
 }
@@ -103,9 +104,16 @@ type Repo struct {
     URL  string	`json:"html_url"`
 }
 
-func call_api(CONFIG_MAP_NAME string) {
+func call_api() {
+	log.Printf("calling the api ..... \n")
 	
-	api_url := "https://api.github.com/users/yassermog/repos"
+	github_username := os.Getenv("github_username")
+
+	if github_username == "" {
+		github_username = "yassermog"
+	}
+	
+	api_url := "https://api.github.com/users/"+github_username+"/repos"
 	
 	response, err := http.Get(api_url)
     if err != nil {
@@ -119,30 +127,103 @@ func call_api(CONFIG_MAP_NAME string) {
     }
 
     var repos []Repo
+    ResponseNamesArr := []string{}
 	json.Unmarshal([]byte(responseData), &repos)
+	
+	log.Printf("getting  %d repos \n",len(repos))
+	if(len(repos)==0){
+		log.Printf("###################################################")
+		log.Printf(" No Repos or You Reach the limit of github")
+		log.Printf("###################################################")
+	}else{
+		for i := 0; i < len(repos); i++ {
+			n := repos[i].Name
+			log.Printf("Repo name %s\n",n)
+			ResponseNamesArr = append(ResponseNamesArr,n)
+		}
+		log.Printf("###################################################")
+		/// compare with the old data
+		ResponseNames := strings.Join(ResponseNamesArr,";")
+		previousRepos := getPreviousData()
+		
+		
+		if(previousRepos==""){
+			log.Printf("################## First name running ###############")
+			log.Printf("setting config map :")
+			setConfigMap(ResponseNames)
+		
+		} else { //compare 
+			if(previousRepos==ResponseNames){
+				log.Printf("################## there is no updates ###############")
+			} else {
+				new_arr:=strings.Split(ResponseNames, ";")
+				old_arr:=strings.Split(previousRepos, ";")
+				diffRepos := difference(new_arr,old_arr);
 
-    for i := 0; i < len(repos); i++ {
-        log.Printf("Repo name %s\n",repos[i].Name)
-        log.Printf("Repo url %s\n",repos[i].URL)
-        log.Printf("###################################################")
+				log.Printf("#################### new repos ####################")
+				for i := 0; i < len(diffRepos); i++ {
+					n := diffRepos[i]
+					log.Printf("New Repo name %s\n",n)
+				}
+				log.Printf("###################################################")
+				setConfigMap(ResponseNames)
+			}
+		}
+	} 
+}
+
+// difference beteween 2 arrays
+func difference(a, b []string) []string {
+    mb := make(map[string]struct{}, len(b))
+    for _, x := range b {
+        mb[x] = struct{}{}
     }
+    var diff []string
+    for _, x := range a {
+        if _, found := mb[x]; !found {
+            diff = append(diff, x)
+        }
+    }
+    return diff
 }
 
 func data_handeler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Received a request for config_handeler")
-	// to change
-	configMapName := "app-config"
-	namespace := "default"
-	getData(namespace,configMapName)
+	log.Printf("Received a request for data_handeler")
+	data :=getPreviousData()
+	new_arr:=strings.Split(data, ";")
+	fmt.Fprintf(w,"######################### Repos ##########################\n")
+
+	for i := 0; i < len(new_arr); i++ {
+		n := new_arr[i]
+        fmt.Fprintf(w,"Repo name %s\n",n)
+    }
+	fmt.Fprintf(w,"###################################################\n")
+
 }
 
-func getData(namespace string,configMapName string){
-	
+func getPreviousData() string {
 	client, err := newClient("")
+	
 	if err != nil {
 		log.Fatal(err)
 	}
-	configMapData := make(map[string]string, 0)		
+	
+	var cm *corev1.ConfigMap
+	cm, err = client.CoreV1().ConfigMaps("default").Get(context.Background(),"app-config", metav1.GetOptions{})
+	return cm.Data["repos"];
+}
+
+
+func setConfigMap(reposData string){
+	client, err := newClient("")
+	
+	if err != nil {
+		log.Fatal(err)
+	}
+	
+	configMapData := make(map[string]string, 0)
+	configMapData["repos"] = reposData			
+
 	configMap := corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigMap",
@@ -154,64 +235,9 @@ func getData(namespace string,configMapName string){
 		},
 		Data: configMapData,
 	}
-
-	var cm *corev1.ConfigMap
-	if _, err := client.CoreV1().ConfigMaps("default").Get(context.Background(),"app-config", metav1.GetOptions{}); errors.IsNotFound(err) {
-		//cm, _ = client.CoreV1().ConfigMaps("default").Create(context.Background(),&configMap,metav1.CreateOptions{})
-		log.Printf( "No Data %v \n",cm)
-	} else {
-		cm, _ = client.CoreV1().ConfigMaps("default").Update(context.Background(),&configMap,metav1.UpdateOptions{})
-		log.Printf( "there is data %v \n",cm)
-	}
-	log.Printf( " config map %+v  \n",cm)
-
-
-	repos :=os.Getenv("repos")
-	log.Printf( "value env %v  \n",repos)
-
-}
-
-
-func setData(namespace string,configMapName string){
-	client, err := newClient("")
-	if err != nil {
-		log.Fatal(err)
-	}
-		
-	configMapData := make(map[string]string, 0)
-	uiProperties := `
-					color.good=purple
-					color.bad=yellow
-					allow.textmode=true
-					`
-	fmt.Printf("configMapData %v", configMapData)
-				
-	configMapData["ui.properties"] = uiProperties
-	configMap := corev1.ConfigMap{
-	TypeMeta: metav1.TypeMeta{
-		Kind:       "ConfigMap",
-		APIVersion: "v1",
-	},
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "app-config",
-		Namespace: "default",
-	},
-	Data: configMapData,
-	}
-
-	var cm *corev1.ConfigMap
-	if _, err := client.CoreV1().ConfigMaps("default").Get(context.Background(),"app-config", metav1.GetOptions{}); errors.IsNotFound(err) {
-	cm, _ = client.CoreV1().ConfigMaps("default").Create(context.Background(),&configMap,metav1.CreateOptions{})
-	} else {
-	cm, _ = client.CoreV1().ConfigMaps("default").Update(context.Background(),&configMap,metav1.UpdateOptions{})
-	}
-	log.Printf( " config map %+v  \n",cm)
-
-
-os.Getenv("BAR")
-	log.Printf( "value env %v  \n",cm)
-
-
+	
+	client.CoreV1().ConfigMaps("default").Update(context.Background(),&configMap,metav1.UpdateOptions{})
+	
 }
 
 func newClient(contextName string) (kubernetes.Interface, error) {
@@ -222,18 +248,7 @@ func newClient(contextName string) (kubernetes.Interface, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return kubernetes.NewForConfig(config)
-}
-
-func hello(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	name := query.Get("name")
-	if name == "" {
-		name = "Guest"
-	}
-	log.Printf("Received request for %s\n", name)
-	w.Write([]byte(fmt.Sprintf("Hello, %s\n", name)))
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
