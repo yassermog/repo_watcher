@@ -8,7 +8,7 @@ build:
 	docker build -t $(TAG) -t $(TAG):$(VER) .
 
 run:
-	docker run -d -p 7070:7070 -e PORT=7070 --name=$(NAME) $(TAG)
+	docker run -d -p 6060:6060 -e PORT=6060 --name=$(NAME) $(TAG)
 
 clean:
 	-docker stop $(NAME)
@@ -21,11 +21,8 @@ push:
 	
 deploy:
 	- kubectl apply -f watcher_deployment.yaml
+	- kubectl apply -f watcher_service.yaml
 	- kubectl apply -f configmap.yaml
 
-
 proxy:
-	minikube service --url yasser-chaos
-
-deploytest:
-	- kubectl apply -f nginx_deployment.yaml
+	minikube service --url repo-watcher-service
