@@ -26,3 +26,10 @@ deploy:
 
 proxy:
 	minikube service --url repo-watcher-service
+
+install: 
+	helm install repo-watcher ./repo-watcher/ --set service.type=NodePort
+
+auth:
+	- kubectl apply -f service-admin-role.yaml
+	- kubectl create clusterrolebinding service-admin-pod --clusterrole=cluster-admin --serviceaccount=default:repo-watcher
