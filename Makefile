@@ -25,7 +25,7 @@ deploy:
 	- kubectl apply -f configmap.yaml
 
 proxy:
-	minikube service --url repo-watcher-service
+	minikube service --url repo-watcher
 
 install: 
 	helm install repo-watcher ./repo-watcher/ --set service.type=NodePort
