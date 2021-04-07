@@ -33,3 +33,8 @@ install:
 auth:
 	- kubectl apply -f service-admin-role.yaml
 	- kubectl create clusterrolebinding service-admin-pod --clusterrole=cluster-admin --serviceaccount=default:repo-watcher
+
+monitoring: 
+	-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	-helm repo update
+	-helm install prometheus prometheus-community/kube-prometheus-stack --namespace monitoring-prometheus --create-namespace 

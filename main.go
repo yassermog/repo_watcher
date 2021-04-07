@@ -17,8 +17,33 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"context"
 	"strings"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+type RepoCollector struct {
+	RepoMetric *prometheus.Desc
+}
+
+var  numberOfRepos float64
+
+func newRepoCollector() *RepoCollector {
+	return &RepoCollector{
+		RepoMetric: prometheus.NewDesc("available_user_repositories",
+			"Shows the number available user repositories",
+			nil, nil,
+		),
+	}
+}
+func (collector *RepoCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- collector.RepoMetric
+}
+func (collector *RepoCollector) Collect(ch chan<- prometheus.Metric) {
+	var metricValue float64
+	metricValue=numberOfRepos
+	
+	ch <- prometheus.MustNewConstMetric(collector.RepoMetric, prometheus.CounterValue, metricValue)
+}
 func main() {
 	CONFIG_MAP_NAME :="app-config"
 	log.Println("Starting Server ....")
@@ -27,6 +52,8 @@ func main() {
 	r.HandleFunc("/config", config_handeler).Methods("GET")
 	r.HandleFunc("/data", data_handeler).Methods("GET")
 	http.Handle("/", r)
+	http.Handle("/metrics", promhttp.Handler())
+
 
 	// Configure Logging
 	LOG_FILE_LOCATION := os.Getenv("LOG_FILE_LOCATION")
@@ -47,6 +74,9 @@ func main() {
 
 	// loop watchrepo
 	go watchrepo(CONFIG_MAP_NAME)
+
+	numberOfReposMetric := newRepoCollector()
+  	prometheus.MustRegister(numberOfReposMetric)
 
 	log.Println("Web Server is Starting on 6060 Port ....")
 	log.Fatal(http.ListenAndServe(":6060", nil))
@@ -129,7 +159,7 @@ func call_api() {
     var repos []Repo
     ResponseNamesArr := []string{}
 	json.Unmarshal([]byte(responseData), &repos)
-	
+	numberOfRepos=float64(len(repos))
 	log.Printf("getting  %d repos \n",len(repos))
 	if(len(repos)==0){
 		log.Printf("###################################################")

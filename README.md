@@ -55,3 +55,14 @@ metadata:
 data:
   repos: ""
 ```
+
+## Monitoring with prometheus 
+
+to install prometheus in Kubernetese you can run  
+
+```
+make monitoring
+```
+
+prometheus metric
+![Alt text](img/number.PNG)
